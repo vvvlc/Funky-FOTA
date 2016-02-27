@@ -517,7 +517,7 @@ void RFM69::readAllRegs()
   long freqCenter = 0;
 #endif
   
-  Serial.println("Address - HEX - BIN");
+  //Serial.println("Address - HEX - BIN");
   for (uint8_t regAddr = 1; regAddr <= 0x4F; regAddr++)
   {
     select();
@@ -525,11 +525,11 @@ void RFM69::readAllRegs()
     regVal = SPI.transfer(0);
     unselect();
 
-    Serial.print(regAddr, HEX);
-    Serial.print(" - ");
-    Serial.print(regVal,HEX);
-    Serial.print(" - ");
-    Serial.println(regVal,BIN);
+    //Serial.print(regAddr, HEX);
+    //Serial.print(" - ");
+    //Serial.print(regVal,HEX);
+    //Serial.print(" - ");
+    //Serial.println(regVal,BIN);
 
 #if REGISTER_DETAIL 
     switch ( regAddr ) 
@@ -567,7 +567,7 @@ void RFM69::readAllRegs()
             } else if ( capVal = 0b100 ) {
                 SerialPrint ( "100 -> Receiver Mode (RX)\n" );
             } else {
-                Serial.print( capVal, BIN );
+                //Serial.print( capVal, BIN );
                 SerialPrint ( " -> RESERVED\n" );
             }
             SerialPrint ( "\n" );
@@ -644,7 +644,7 @@ void RFM69::readAllRegs()
             bitRate |= regVal;
             SerialPrint ( "Bit Rate (Chip Rate when Manchester encoding is enabled)\nBitRate : ");
             unsigned long val = 32UL * 1000UL * 1000UL / bitRate;
-            Serial.println( val );
+            //Serial.println( val );
             SerialPrint( "\n" );
             break;
         }
@@ -658,7 +658,7 @@ void RFM69::readAllRegs()
             freqDev |= regVal;
             SerialPrint( "Frequency deviation\nFdev : " );
             unsigned long val = 61UL * freqDev;
-            Serial.println( val );
+            //Serial.println( val );
             SerialPrint ( "\n" );
             break;
         }
@@ -679,7 +679,7 @@ void RFM69::readAllRegs()
             freqCenter = freqCenter | regVal;
             SerialPrint ( "RF Carrier frequency\nFRF : " );
             unsigned long val = 61UL * freqCenter;
-            Serial.println( val );
+            //Serial.println( val );
             SerialPrint( "\n" );
             break;
         }
