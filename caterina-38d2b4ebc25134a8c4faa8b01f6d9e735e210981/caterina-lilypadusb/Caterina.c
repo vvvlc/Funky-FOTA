@@ -100,6 +100,234 @@ void LEDPulse(void)
 		L_LED_ON();
 }
 
+
+/*
+ * Separate function for doing spm stuff
+ * It's needed for application to do SPM, as SPM instruction works only
+ * from bootloader.
+ *
+ * How it works:
+ * - do SPM
+ * - wait for SPM to complete
+ * - if chip have RWW/NRWW sections it does additionaly:
+ *   - if command is WRITE or ERASE, AND data=0 then reenable RWW section
+ *
+ * In short:
+ * If you play erase-fill-write, just set data to 0 in ERASE and WRITE
+ * If you are brave, you have your code just below bootloader in NRWW section
+ *   you could do fill-erase-write sequence with data!=0 in ERASE and
+ *   data=0 in WRITE
+ *
+ * How to find address of this function?
+ * You have to generate listing of bootloader ie. Catalina.lss search for <__do_spm>
+ * 000070ac <__do_spm>:    where  0x70ac is the entry point.
+ * it is before vector_ends function 0x70ac
+ *
+ * in your scatch file use this to
+ * typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
+ * #define SLLOCJMP ((do_spm_t)(0x70ac>>1))
+ * const do_spm_t do_spm = SLLOCJMP;
+ *
+ * The same as do_spm but with disable/restore interrupts state
+ * required to succesfull SPM execution
+ *
+ * void do_spm_cli(uint16_t address, uint8_t command, uint16_t data) {
+ *   uint8_t sreg_save;
+ *
+ *   sreg_save = SREG;  // save old SREG value
+ *   asm volatile("cli");  // disable interrupts
+ *   do_spm(address,command,data);
+ *   SREG=sreg_save; // restore last interrupts state
+ * }
+ *
+ */
+
+void __do_spm(uint16_t address, uint8_t command, uint16_t data) __attribute__ ((used, section (".vectors")));
+void __do_spm(uint16_t address, uint8_t command, uint16_t data) {
+    // Do spm stuff
+    __asm__ volatile (
+        "    movw  r0, %3\n"
+        "    out %0, %1\n"
+        "    spm\n"
+        "    clr  r1\n"
+        :
+        : "i" (_SFR_IO_ADDR(__SPM_REG)),
+          "r" ((uint8_t)command),
+          "z" ((uint16_t)address),
+          "r" ((uint16_t)data)
+        : "r0"
+    );
+
+    // wait for spm to complete
+    //   it doesn't have much sense for __BOOT_PAGE_FILL,
+    //   but it doesn't hurt and saves some bytes on 'if'
+    boot_spm_busy_wait();
+#if defined(RWWSRE)
+    // this 'if' condition should be: (command == __BOOT_PAGE_WRITE || command == __BOOT_PAGE_ERASE)...
+    // but it's tweaked a little assuming that in every command we are interested in here, there
+    // must be also SELFPRGEN set. If we skip checking this bit, we save here 4B
+    if ((command & (_BV(PGWRT)|_BV(PGERS))) && (data == 0) ) {
+      // Reenable read access to flash
+      boot_rww_enable();
+    }
+#endif
+}
+
+/* LED 2 */
+
+#define LED2_SETUP()		DDRB |= (1<<4);
+#define L_LED2_OFF()		PORTB &= ~(1<<4)
+#define L_LED2_ON()		PORTB |= (1<<4)
+#define L_LED2_TOGGLE()	PORTB^= (1<<4)
+
+/* ENd led2 */
+
+
+//static volatile char version[16] __attribute__ ((section (0x7000))) = "0.01 DEV";
+//typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
+//const do_spm_t ___do_spm __attribute__ ((section (".init"),used)) = __do_spm;
+
+/* Watchdog settings */
+#define WATCHDOG_OFF    (0)
+#define WATCHDOG_16MS   (_BV(WDE))
+#define WATCHDOG_32MS   (_BV(WDP0) | _BV(WDE))
+#define WATCHDOG_64MS   (_BV(WDP1) | _BV(WDE))
+#define WATCHDOG_125MS  (_BV(WDP1) | _BV(WDP0) | _BV(WDE))
+#define WATCHDOG_250MS  (_BV(WDP2) | _BV(WDE))
+#define WATCHDOG_500MS  (_BV(WDP2) | _BV(WDP0) | _BV(WDE))
+#define WATCHDOG_1S     (_BV(WDP2) | _BV(WDP1) | _BV(WDE))
+#define WATCHDOG_2S     (_BV(WDP2) | _BV(WDP1) | _BV(WDP0) | _BV(WDE))
+#ifndef __AVR_ATmega8__
+#define WATCHDOG_4S     (_BV(WDP3) | _BV(WDE))
+#define WATCHDOG_8S     (_BV(WDP3) | _BV(WDP0) | _BV(WDE))
+#endif
+
+void watchdogConfig(uint8_t x) {
+  WDTCSR = _BV(WDCE) | _BV(WDE);
+  WDTCSR = x;
+}
+/* end watch dog */
+
+/* SERIAL */
+#define BAUD 9600
+#define UBRR_VAL ((F_CPU / (16UL * BAUD)) - 1)
+
+// Initialize the UART
+//void avr_uart_init(void) __attribute__ ((inline));
+void avr_uart_init(void)
+{
+	     // Prescale Timer 0 to divide by 64
+	     TCCR0B |= _BV(CS01) | _BV(CS00);
+	     // Enable Timer 0 overflow interrupt
+	     TIMSK0 |= _BV(TOIE0);
+
+
+  // Enable bidirectional UART
+  UCSR1B |= _BV(RXEN1) | _BV(TXEN1);
+  // Use 8-bit characters
+  UCSR1C |= _BV(UCSZ10) | _BV(UCSZ11);
+  // Set the Baud rate
+  UBRR1H = (UBRR_VAL >> 8);
+  UBRR1L = UBRR_VAL;
+}
+
+
+void putch(char ch) {
+	  // Wait to be able to transmit
+	  while((UCSR1A & _BV(UDRE1)) == 0) ;
+	  // Put the data into the send buffer
+	  UDR1 = ch;
+
+	  _delay_ms(1000);
+}
+
+void puth(char ch) {
+	putch(',');
+	putch(((ch/100) % 10)+'0');
+	putch(((ch/10) % 10)+'0');
+	putch((ch % 10)+'0');
+	putch(',');
+}
+
+void putb(char ch) {
+	putch(';');
+	for(int i=0;i<8;i++){
+		putch((ch & 0x80)?'1':'0');
+		ch<<=1;
+	}
+	putch(';');
+}
+
+#ifdef DEBUG
+#define Dinit() avr_uart_init()
+#define Dputch(a) putch(a)
+#define Dputh(a) puth(a)
+#define Dputb(a) putb(a)
+#else
+#define Dinit()
+#define Dputch(a)
+#define Dputh(a)
+#define Dputb(a)
+
+#endif
+
+
+typedef struct flash_header
+{
+ unsigned int crc:5;//cksum
+ unsigned int compressed:1;//1 - compressed image
+ unsigned int size:10;//length of flash
+}FLASH_HEADER;
+#define NEW_FLASH_OFFSET 0x3800
+#define SIZE_OF_NEW_FLASH_HEADER 2
+/**
+ * returns 0 sucessfull copy of new flash
+ * 			1 illegal size of new flash
+ */
+int copyflashIfValid(void) {
+	uint16_t i,page;
+	uint16_t imagesize=0x7FFF;
+
+	//read image size if size is not valid (ignore it)
+	imagesize=pgm_read_word(NEW_FLASH_OFFSET);
+	Dputch('F');
+	if (imagesize>=NEW_FLASH_OFFSET || imagesize == 0) {
+		Dputch('1');
+		return 1;
+	}
+
+	Dputch('2');
+	for(i=0;i<imagesize;) {
+		page=i;
+		Dputch('*');
+		for (; i<page+SPM_PAGESIZE; i+=2)
+		{
+			// Set up little-endian word.
+			uint16_t w = pgm_read_word(i + NEW_FLASH_OFFSET+SIZE_OF_NEW_FLASH_HEADER);
+			boot_page_fill (i, w);
+		}
+		boot_page_erase(page);
+		boot_spm_busy_wait();
+		boot_page_write (page); // Store buffer in flash page.
+		boot_spm_busy_wait();
+#if defined(RWWSRE)
+		// Reenable read access to flash
+		boot_rww_enable();
+#endif
+	}
+
+	/*
+	 * erase first page as sign of program flashed
+	 */
+	Dputch('3');
+	boot_page_erase(NEW_FLASH_OFFSET);
+	boot_spm_busy_wait();
+//    TIMSK1 = (1 << OCIE1A);
+    //now trigger a watchdog reset
+    watchdogConfig(WATCHDOG_16MS);  // short WDT timeout
+	while (1) {Dputch('-');}; 		                  // and busy-loop so that WD causes a reset and app start
+}
+
 /** Main program entry point. This routine configures the hardware required by the bootloader, then continuously
  *  runs the bootloader processing routine until it times out or is instructed to exit.
  */
@@ -113,20 +341,51 @@ int main(void)
 	uint8_t  mcusr_state = MCUSR;		// store the initial state of the Status register
 	MCUSR = 0;							// clear all reset flags	
 
+
+
 	/* Watchdog may be configured with a 15 ms period so must disable it before going any further */
 	wdt_disable();
 	
+
+	Dinit();
+	Dputch('\n');
+	Dputch('\r');
+	Dputch('S');
+	Dputh(mcusr_state);//Dputb(mcusr_state);
+
+	/*
+	 * copy internal flash only if reset via watch dog
+	 */
+	if (!(mcusr_state & _BV(EXTRF))) //if not external reset
+	{
+		Dputch('a');
+		if (mcusr_state & _BV(WDRF)) { //if reset by watchdog
+			Dputch('b');
+			copyflashIfValid();
+			Dputch('c');
+		}
+	}
+
+	Dputch('d');
+
+
 	if (mcusr_state & (1<<EXTRF)) {
 		// External reset -  we should continue to self-programming mode.
+		Dputch('e');
 	} else if (mcusr_state & (1<<PORF) && pgm_read_word(0) != 0xFFFF) {		
 		// After a power-on reset skip the bootloader and jump straight to sketch 
-		// if one exists.	
+		// if one exists.
+		Dputch('f');
 		StartSketch();
+		Dputch('g');
 	} else if ((mcusr_state & (1<<WDRF)) && (bootKeyPtrVal != bootKey) && (pgm_read_word(0) != 0xFFFF)) {	
 		// If it looks like an "accidental" watchdog reset then start the sketch.
+		Dputch('h');
 		StartSketch();
+		Dputch('i');
 	}
 	
+	Dputch('j');
 	/* Setup hardware required for the bootloader */
 	SetupHardware();
 
@@ -134,7 +393,7 @@ int main(void)
 	sei();
 	
 	Timeout = 0;
-	
+
 	while (RunBootloader)
 	{
 		CDC_Task();
@@ -145,7 +404,6 @@ int main(void)
 
 		LEDPulse();
 	}
-
 	/* Disconnect from the host - USB interface will be reset later along with the AVR */
 	USB_Detach();
 
