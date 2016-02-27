@@ -39,7 +39,8 @@ No, therefore pass control to application, ie. jmp 0x0000
 7. Bootloader is active
 8. Are there valid data in Temp area (value at 0x3800 contains length of data and is < 14334)
 9. Copy content of Temp area to app area
-10. Pass control to application, ie. jmp 0x0000
+10. Erase page at 0x3800, this set length to 0xFFFF, ie invalidates content of Temp area
+11. Pass control to application, ie. jmp 0x0000
 
 ## Potential Improvements 
 
