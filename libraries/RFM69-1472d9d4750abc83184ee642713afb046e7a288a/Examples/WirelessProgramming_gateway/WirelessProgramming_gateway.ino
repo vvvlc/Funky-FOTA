@@ -12,6 +12,7 @@
 // **********************************************************************************
 // Copyright Felix Rusu, LowPowerLab.com
 // Library and code by Felix Rusu - felix@lowpowerlab.com
+// Added changes for Funky V3 by Vitek VLCEK Copyright Vitek VLCEK
 // **********************************************************************************
 // License
 // **********************************************************************************
@@ -39,15 +40,15 @@
 // **********************************************************************************
 #include <RFM69.h>          //get it here: https://www.github.com/lowpowerlab/rfm69
 #include <SPI.h>
-#include <SPIFlash.h>      //get it here: https://www.github.com/lowpowerlab/spiflash
+//#include <SPIFlash.h>      //get it here: https://www.github.com/lowpowerlab/spiflash
 #include <WirelessHEX69.h> //get it here: https://github.com/LowPowerLab/WirelessProgramming/tree/master/WirelessHEX69
 
 #define NODEID             254  //this node's ID, should be unique among nodes on this NETWORKID
 #define NETWORKID          250  //what network this node is on
 //Match frequency to the hardware version of the radio on your Moteino (uncomment one):
 //#define FREQUENCY   RF69_433MHZ
-//#define FREQUENCY   RF69_868MHZ
-#define FREQUENCY     RF69_915MHZ
+#define FREQUENCY   RF69_868MHZ
+//#define FREQUENCY     RF69_915MHZ
 #define ENCRYPTKEY "sampleEncryptKey" //(16 bytes of your choice - keep the same on all encrypted nodes)
 //#define IS_RFM69HW             //uncomment only for RFM69HW! Leave out if you have RFM69W!
 
@@ -55,11 +56,8 @@
 #define ACK_TIME    50  // # of ms to wait for an ack
 #define TIMEOUT     3000
 
-#ifdef __AVR_ATmega1284P__
-  #define LED           15 // Moteino MEGAs have LEDs on D15
-#else
-  #define LED           9 // Moteinos hsave LEDs on D9
-#endif
+#define LED            13// Moteinos hsave LEDs on D9
+
 
 RFM69 radio;
 char c = 0;
@@ -68,11 +66,18 @@ byte targetID=0;
 
 void setup(){
   Serial.begin(SERIAL_BAUD);
+
+  pinMode(4,OUTPUT);
+  digitalWrite(4,LOW);
+  delay(100);
+  radio.setCS(10);
+  
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
   radio.encrypt(ENCRYPTKEY); //OPTIONAL
 #ifdef IS_RFM69HW
   radio.setHighPower(); //only for RFM69HW!
 #endif
+  while (!Serial) {Blink(LED,500); /*heartbeat*/};
   Serial.println("Start wireless gateway...");
 }
 
