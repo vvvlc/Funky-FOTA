@@ -6,6 +6,7 @@
 // **********************************************************************************
 // Copyright Felix Rusu, LowPowerLab.com
 // Library and code by Felix Rusu - felix@lowpowerlab.com
+// Added changes for FOTA for Funky V3 by Vitek VLCEK Copyright Vitek VLCEK
 // **********************************************************************************
 // License
 // **********************************************************************************
@@ -38,7 +39,7 @@
 #else
   #define LED           9 // Moteinos have LEDs on D9
 #endif
-#define SHIFTCHANNEL 1000000 //amount to shift frequency of HEX transmission to keep original channel free of the intense traffic
+//#define SHIFTCHANNEL 1000000 //amount to shift frequency of HEX transmission to keep original channel free of the intense traffic
 
 #ifndef DEFAULT_TIMEOUT
   #define DEFAULT_TIMEOUT 3000
@@ -49,13 +50,15 @@
 #endif
 
 #include <RFM69.h>
-#include <SPIFlash.h>
+//#include <SPIFlash.h>
 
 //functions used in the REMOTE node
-void CheckForWirelessHEX(RFM69 radio, SPIFlash flash, boolean DEBUG=false, byte LEDpin=LED);
+//void CheckForWirelessHEX(RFM69 radio, SPIFlash flash, boolean DEBUG=false, byte LEDpin=LED);
+void CheckForWirelessHEX(RFM69 radio, boolean DEBUG=false, byte LEDpin=LED);
 void resetUsingWatchdog(boolean DEBUG=false);
 
-boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolean DEBUG=false, byte LEDpin=LED);
+//boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolean DEBUG=false, byte LEDpin=LED);
+boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, boolean DEBUG=false, byte LEDpin=LED);
 #ifdef SHIFTCHANNEL
 boolean HandleWirelessHEXDataWrapper(RFM69 radio, byte remoteID, SPIFlash flash, boolean DEBUG=false, byte LEDpin=LED);
 #endif

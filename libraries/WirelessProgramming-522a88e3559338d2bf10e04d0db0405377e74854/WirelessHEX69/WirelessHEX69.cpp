@@ -6,6 +6,7 @@
 // **********************************************************************************
 // Copyright Felix Rusu, LowPowerLab.com
 // Library and code by Felix Rusu - felix@lowpowerlab.com
+// Added changes for FOTA for Funky V3 by Vitek VLCEK Copyright Vitek VLCEK
 // **********************************************************************************
 // License
 // **********************************************************************************
@@ -35,12 +36,125 @@
 #include <RFM69registers.h>
 #include <avr/wdt.h>
 
+
+/* DEBUG */
+//#define DSer(a) Serial1.
+
+/*  local flash support */
+
+#include <avr/boot.h>
+
+typedef void (*do_spm_t)(uint16_t address, uint8_t command, uint16_t data);
+#define SLLOCJMP ((do_spm_t)(0x70ac>>1))
+const do_spm_t do_spm = SLLOCJMP;
+
+
+/*
+ * The same as do_spm but with disable/restore interrupts state
+ * required to succesfull SPM execution
+ */
+void do_spm_cli(uint16_t address, uint8_t command, uint16_t data) {
+  uint8_t sreg_save;
+
+  sreg_save = SREG;  // save old SREG value
+  asm volatile("cli");  // disable interrupts
+  do_spm(address,command,data);
+  SREG=sreg_save; // restore last interrupts state
+}
+
+
+/*
+ * Erase page in FLASH
+ */
+void __page_erase(uint16_t address) {
+  do_spm_cli(address,__BOOT_PAGE_ERASE,0);
+}
+
+
+/*
+ * Write word into temporary buffer
+ */
+void __page_fill(uint16_t address, uint16_t data) {
+  do_spm_cli(address,__BOOT_PAGE_FILL,data);
+}
+
+
+/*
+ * Write temporary buffer into FLASH
+ */
+void __page_write(uint16_t address) {
+  do_spm_cli(address,__BOOT_PAGE_WRITE,0);
+}
+
+
+
+#include <avr/pgmspace.h>
+
+
+
+const char flash_buffer[SPM_PAGESIZE] __attribute__ (( aligned(SPM_PAGESIZE) )) PROGMEM= {
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVW"
+};
+
+void writeByte2(uint16_t address, char b) {
+	address-=10;
+	if (address % 16==0) {
+		Serial1.println();
+		Serial1.print(address,HEX);
+		Serial1.print(':');
+	}
+
+	Serial1.print(' ');
+	Serial1.print((uint8_t)b,HEX);
+
+	if (address % SPM_PAGESIZE == (SPM_PAGESIZE-1)) {
+		Serial1.print('*');
+	}
+}
+#define NEW_FLASH_OFFSET 0x3800
+uint8_t loByte;
+void writeByte(uint16_t address, char b) {
+	address+=NEW_FLASH_OFFSET-10;
+	if (address % 16==0) {
+		Serial1.println();
+		Serial1.print(address,HEX);
+
+		if (address % SPM_PAGESIZE == 0) {
+			Serial1.print('@');
+			__page_erase(address);
+		} else {
+			Serial1.print(':');
+		}
+	}
+
+	Serial1.print(' ');
+	Serial1.print((uint8_t)b,HEX);
+
+	if (address % 2 == 0) {
+		loByte = b;
+	} else {
+		__page_fill (address-1, (b<<8)|loByte);
+	}
+
+	if (address % SPM_PAGESIZE == (SPM_PAGESIZE-1)) {
+
+		uint16_t page=address - (SPM_PAGESIZE-1);
+		Serial1.print('*');
+		__page_write (page); // Store buffer in flash page.
+		Serial1.print(page,HEX);
+	}
+}
+
+
+/* local flash support */
+
 /// Checks whether the last message received was a wireless programming request handshake
 /// If so it will start the handshake protocol, receive the new HEX image and 
 /// store it on the external flash chip, then reboot
 /// Assumes radio has been initialized and has just received a message (is not in SLEEP mode, and you called CRCPass())
 /// Assumes flash is an external SPI flash memory chip that has been initialized
-void CheckForWirelessHEX(RFM69 radio, SPIFlash flash, boolean DEBUG, byte LEDpin)
+//void CheckForWirelessHEX(RFM69 radio, SPIFlash flash, boolean DEBUG, byte LEDpin)
+void CheckForWirelessHEX(RFM69 radio, boolean DEBUG, byte LEDpin)
 {
   //special FLASH command, enter a FLASH image exchange sequence
   if (radio.DATALEN >= 4 && radio.DATA[0]=='F' && radio.DATA[1]=='L' && radio.DATA[2]=='X' && radio.DATA[3]=='?')
@@ -53,17 +167,18 @@ void CheckForWirelessHEX(RFM69 radio, SPIFlash flash, boolean DEBUG, byte LEDpin
 #ifdef SHIFTCHANNEL
     else if (HandleWirelessHEXDataWrapper(radio, remoteID, flash, DEBUG, LEDpin))
 #else
-    else if (HandleWirelessHEXData(radio, remoteID, flash, DEBUG, LEDpin))
+    //else if (HandleWirelessHEXData(radio, remoteID, flash, DEBUG, LEDpin))
+    else if (HandleWirelessHEXData(radio, remoteID, DEBUG, LEDpin))
 #endif
     {
-      if (DEBUG) Serial.print("FLASH IMG TRANSMISSION SUCCESS!\n");
+      //if (DEBUG) Serial.print("FLASH IMG TRANSMISSION SUCCESS!\n");
       resetUsingWatchdog(DEBUG);
     }
     else
     {
-      if (DEBUG) Serial.print("Timeout/Error, erasing written data ... ");
+      //if (DEBUG) Serial.print("Timeout/Error, erasing written data ... ");
       //flash.blockErase32K(0); //clear any written data in first 32K block
-      if (DEBUG) Serial.println("DONE");
+      //if (DEBUG) Serial.println("DONE");
     }
   }
 }
@@ -71,16 +186,17 @@ void CheckForWirelessHEX(RFM69 radio, SPIFlash flash, boolean DEBUG, byte LEDpin
 #ifdef SHIFTCHANNEL
 boolean HandleWirelessHEXDataWrapper(RFM69 radio, byte remoteID, SPIFlash flash, boolean DEBUG, byte LEDpin) {
   radio.sendACK("FLX?OK",6); //ACK the HANDSHAKE
-  if (DEBUG) { Serial.println("FLX?OK (ACK sent)"); Serial.print("Shifting channel to "); Serial.println(radio.getFrequency() + SHIFTCHANNEL);}
+  //if (DEBUG) { Serial.println("FLX?OK (ACK sent)"); Serial.print("Shifting channel to "); Serial.println(radio.getFrequency() + SHIFTCHANNEL);}
   radio.setFrequency(radio.getFrequency() + SHIFTCHANNEL); //shift center freq by SHIFTCHANNEL amount
   boolean result = HandleWirelessHEXData(radio, remoteID, flash, DEBUG, LEDpin);
-  if (DEBUG) { Serial.print("UNShifting channel to "); Serial.println(radio.getFrequency() - SHIFTCHANNEL);}
+  //if (DEBUG) { Serial.print("UNShifting channel to "); Serial.println(radio.getFrequency() - SHIFTCHANNEL);}
   radio.setFrequency(radio.getFrequency() - SHIFTCHANNEL); //restore center freq
   return result;
 }
 #endif
 
-boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolean DEBUG, byte LEDpin) {
+//boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolean DEBUG, byte LEDpin) {
+boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, boolean DEBUG, byte LEDpin) {
   uint32_t now=0;
   uint16_t tmp,seq=0;
   char buffer[16];
@@ -88,13 +204,13 @@ boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolea
   uint16_t bytesFlashed=10;
 #ifndef SHIFTCHANNEL
   radio.sendACK("FLX?OK",6); //ACK the HANDSHAKE
-  if (DEBUG) Serial.println("FLX?OK (ACK sent)");
+  //if (DEBUG) Serial.println("FLX?OK (ACK sent)");
 #endif
 
   //first clear the fist 32k block (dedicated to a new FLASH image)
-  flash.blockErase32K(0);
-  flash.writeBytes(0,"FLXIMG:", 7);
-  flash.writeByte(9,':');
+  //flash.blockErase32K(0);
+  //flash.writeBytes(0,"FLXIMG:", 7);
+  //flash.writeByte(9,':');
   now=millis();
     
   while(1)
@@ -124,12 +240,14 @@ boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolea
             index++;
           }
 
-          if (DEBUG) {
+          /*
+
+           //if (DEBUG) {
             Serial.print("radio [");
             Serial.print(dataLen);
             Serial.print("] > ");
             PrintHex83((byte*)radio.DATA, dataLen);
-          }
+          }*/
 
           if (radio.DATA[++index] != ':') return false;
           now = millis(); //got "good" packet
@@ -141,14 +259,16 @@ boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolea
               seq++;
               for(byte i=index;i<dataLen;i++)
               {
-                flash.writeByte(bytesFlashed++, radio.DATA[i]);
-                if (bytesFlashed%32768==0) flash.blockErase32K(bytesFlashed);//erase subsequent 32K blocks (possible in case of atmega1284p)
+                //flash.writeByte(bytesFlashed++, radio.DATA[i]);
+            	  writeByte(bytesFlashed++, radio.DATA[i]);
+                //if (bytesFlashed%32768==0) flash.blockErase32K(bytesFlashed);//erase subsequent 32K blocks (possible in case of atmega1284p)
+
               }
             }
 
             //send ACK
             tmp = sprintf(buffer, "FLX:%u:OK", tmp);
-            if (DEBUG) Serial.println((char*)buffer);
+            //if (DEBUG) Serial.println((char*)buffer);
             radio.sendACK(buffer, tmp);
           }
         }
@@ -158,29 +278,29 @@ boolean HandleWirelessHEXData(RFM69 radio, byte remoteID, SPIFlash flash, boolea
           if (dataLen==4) //ACK for handshake was lost, resend
           {
             radio.sendACK("FLX?OK",6);
-            if (DEBUG) Serial.println("FLX?OK resend");
+            //if (DEBUG) Serial.println("FLX?OK resend");
           }
           if (dataLen==7 && radio.DATA[4]=='E' && radio.DATA[5]=='O' && radio.DATA[6]=='F') //Expected EOF
           {
 #ifdef __AVR_ATmega1284P__
             if ((bytesFlashed-10)>65526) { //max 65536 - 10 bytes (signature)
-              if (DEBUG) Serial.println("IMG exceeds 64k, refusing it");
+              //if (DEBUG) Serial.println("IMG exceeds 64k, refusing it");
               radio.sendACK("FLX?NOK",7);
               return false; //just return, let MAIN timeout
             }
 #else //assuming atmega328p
             if ((bytesFlashed-10)>31744) {
-              if (DEBUG) Serial.println("IMG exceeds 31k, refusing it");
+              //if (DEBUG) Serial.println("IMG exceeds 31k, refusing it");
               radio.sendACK("FLX?NOK",7);
               return false; //just return, let MAIN timeout
             }
 #endif
             radio.sendACK("FLX?OK",6);
-            if (DEBUG) Serial.println("FLX?OK");
+            //if (DEBUG) Serial.println("FLX?OK");
             //save # of bytes written
-            flash.writeByte(7,(bytesFlashed-10)>>8);
-            flash.writeByte(8,(bytesFlashed-10));
-            flash.writeByte(9,':');
+           // flash.writeByte(7,(bytesFlashed-10)>>8);
+           // flash.writeByte(8,(bytesFlashed-10));
+           // flash.writeByte(9,':');
             return true;
           }
         }
@@ -226,10 +346,10 @@ boolean CheckForSerialHEX(byte* input, byte inputLen, RFM69 radio, byte targetID
 #endif
       {
         Serial.println("FLX?OK"); //signal EOF serial handshake back to host script
-        if (DEBUG) Serial.println("FLASH IMG TRANSMISSION SUCCESS");
+        //if (DEBUG) Serial.println("FLASH IMG TRANSMISSION SUCCESS");
         return true;
       }
-      if (DEBUG) Serial.println("FLASH IMG TRANSMISSION FAIL");
+      //if (DEBUG) Serial.println("FLASH IMG TRANSMISSION FAIL");
       return false;
     }
   }
@@ -253,7 +373,7 @@ boolean HandleSerialHandshake(RFM69 radio, byte targetID, boolean isEOF, uint16_
     }
   }
 
-  if (DEBUG) Serial.println("Handshake fail");
+  //if (DEBUG) Serial.println("Handshake fail");
   return false;
 }
 
@@ -335,7 +455,7 @@ boolean HandleSerialHEXData(RFM69 radio, byte targetID, uint16_t TIMEOUT, uint16
 timeoutcheck:
     if (millis()-now > TIMEOUT)
     {
-      Serial.print("Timeout receiving FLASH image from SERIAL, aborting...");
+      //Serial.print("Timeout receiving FLASH image from SERIAL, aborting...");
       //send abort msg or just let node timeout as well?
       return false;
     }
@@ -400,12 +520,12 @@ boolean sendHEXPacket(RFM69 radio, byte targetID, byte* sendBuf, byte hexDataLen
   long now = millis();
   
   while(1) {
-    if (DEBUG) { Serial.print("RFTX > "); PrintHex83(sendBuf, hexDataLen); }
+    //if (DEBUG) { Serial.print("RFTX > "); PrintHex83(sendBuf, hexDataLen); }
     if (radio.sendWithRetry(targetID, sendBuf, hexDataLen, 2, ACKTIMEOUT))
     {
       byte ackLen = radio.DATALEN;
       
-      if (DEBUG) { Serial.print("RFACK > "); Serial.print(ackLen); Serial.print(" > "); PrintHex83((byte*)radio.DATA, ackLen); }
+      //if (DEBUG) { Serial.print("RFACK > "); Serial.print(ackLen); Serial.print(" > "); PrintHex83((byte*)radio.DATA, ackLen); }
       
       if (ackLen >= 8 && radio.DATA[0]=='F' && radio.DATA[1]=='L' && radio.DATA[2]=='X' && 
           radio.DATA[3]==':' && radio.DATA[ackLen-3]==':' &&
@@ -419,7 +539,7 @@ boolean sendHEXPacket(RFM69 radio, byte targetID, byte* sendBuf, byte hexDataLen
 
     if (millis()-now > TIMEOUT)
     {
-      Serial.println("Timeout waiting for packet ACK, aborting FLASH operation ...");
+      //Serial.println("Timeout waiting for packet ACK, aborting FLASH operation ...");
       break; //abort FLASH sequence if no valid ACK was received for a long time
     }
   }
@@ -450,8 +570,12 @@ void PrintHex83(uint8_t *data, uint8_t length) // prints 8-bit data in hex
 /// Use watchdog to reset
 void resetUsingWatchdog(boolean DEBUG)
 {
-  //wdt_disable();
-  if (DEBUG) Serial.print("REBOOTING");
+	Serial1.println("REBOOTING");
+	//__asm__ volatile("jmp 0x7000");
+
+  wdt_disable();
+  //if (DEBUG) Serial.print("REBOOTING");
   wdt_enable(WDTO_15MS);
-  while(1) if (DEBUG) Serial.print('.');
+  while(1) //if (DEBUG) Serial.print('.');
+  {};
 }
