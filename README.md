@@ -1,5 +1,7 @@
 # FOTA/Wireless Programming for Funky V3
 
+[WIKI](https://github.com/vvvlc/Funky-FOTA/wiki/FOTA-on-Funky) describes how to setup FOTA on Funky.
+
 I wanted to have [FOTA](http://en.wikipedia.org/wiki/Over-the-air_programming)/[Wireless programming](http://lowpowerlab.com/blog/category/moteino/wireless-programming/) capability for my project. Unfortunately [RFM69 library](https://github.com/LowPowerLab/RFM69) does not fit 4KB [bootloader](http://www.hackersworkbench.com/intro-to-bootloaders-for-avr) area therefore I could not follow [standard self-programming mechanism](http://www.engineersgarage.com/embedded/avr-microcontroller-projects/How-to-Use-SPM-for-Flash-to-Flash-Programming) (store data comming from a serial stream to internal flash). I wanted to reuse [Felix's wireless programming library](https://github.com/LowPowerLab/WirelessProgramming) however [Funky V3](http://harizanov.com/wiki/wiki-home/funky-v3/) does not have external [spi flash](http://www.instructables.com/id/How-to-Design-with-Discrete-SPI-Flash-Memory/). Therefore I had to change layout of the internal 32KB flash. I was influenced by video: [Intermediate memory bootloaders](https://www.youtube.com/watch?v=jbLy6kE-Szg).
 
 Standard layout for [ATMEGA32U4](http://www.atmel.com/devices/atmega32u4.aspx) with [Caterina bootloader](https://github.com/arduino/Arduino/blob/master/hardware/arduino/avr/bootloaders/caterina/Caterina.c) has two main sections. 
