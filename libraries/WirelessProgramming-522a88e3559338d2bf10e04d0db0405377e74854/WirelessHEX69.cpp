@@ -96,39 +96,28 @@ const char flash_buffer[SPM_PAGESIZE] __attribute__ (( aligned(SPM_PAGESIZE) )) 
   "0123456789ABCDEFGHIJKLMNOPQRSTUVW"
 };
 
-void writeByte2(uint16_t address, char b) {
-	address-=10;
-	if (address % 16==0) {
-		Serial1.println();
-		Serial1.print(address,HEX);
-		Serial1.print(':');
-	}
-
-	Serial1.print(' ');
-	Serial1.print((uint8_t)b,HEX);
-
-	if (address % SPM_PAGESIZE == (SPM_PAGESIZE-1)) {
-		Serial1.print('*');
-	}
-}
 #define NEW_FLASH_OFFSET 0x3800
 uint8_t loByte;
 void writeByte(uint16_t address, char b) {
+	/*
+	 * effective address is NEW_FLAS_OFFSET (we want to write into Temp area)
+	 *  - 10  (SPI flash contains some metadata that we don't have to store in temp location, so we can skip it)
+	 */
 	address+=NEW_FLASH_OFFSET-10;
 	if (address % 16==0) {
-		Serial1.println();
-		Serial1.print(address,HEX);
+		//Serial1.println();
+		//Serial1.print(address,HEX);
 
 		if (address % SPM_PAGESIZE == 0) {
-			Serial1.print('@');
+			//Serial1.print('@');
 			__page_erase(address);
 		} else {
-			Serial1.print(':');
+			//Serial1.print(':');
 		}
 	}
 
-	Serial1.print(' ');
-	Serial1.print((uint8_t)b,HEX);
+	//Serial1.print(' ');
+	//Serial1.print((uint8_t)b,HEX);
 
 	if (address % 2 == 0) {
 		loByte = b;
@@ -139,9 +128,9 @@ void writeByte(uint16_t address, char b) {
 	if (address % SPM_PAGESIZE == (SPM_PAGESIZE-1)) {
 
 		uint16_t page=address - (SPM_PAGESIZE-1);
-		Serial1.print('*');
+		//Serial1.print('*');
 		__page_write (page); // Store buffer in flash page.
-		Serial1.print(page,HEX);
+		//Serial1.print(page,HEX);
 	}
 }
 
@@ -570,7 +559,7 @@ void PrintHex83(uint8_t *data, uint8_t length) // prints 8-bit data in hex
 /// Use watchdog to reset
 void resetUsingWatchdog(boolean DEBUG)
 {
-	Serial1.println("REBOOTING");
+	//Serial1.println("REBOOTING");
 	//__asm__ volatile("jmp 0x7000");
 
   wdt_disable();
