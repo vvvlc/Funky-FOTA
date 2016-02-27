@@ -50,3 +50,7 @@ No, therefore pass control to application, ie. jmp 0x0000
   * Squeeze RFM69 driver into 4KB. This could eliminate necessity of temp area because bootloader could flash data directly to app area. This seems to be best approach but the most complicated one.
  * introduce [faster mode](http://lowpowerlab.com/blog/2016/01/21/wireless-programming-just-got-50-faster/) that increases transfer rate
  * allow Arduino IDE to update firmware over the air
+
+## Credits
+ * Martin Harizanov for [Funky V3](http://harizanov.com/wiki/wiki-home/funky-v3/) 
+ * LowPowerLab for [RFM69 and Wireless programming](http://lowpowerlab.com/)
