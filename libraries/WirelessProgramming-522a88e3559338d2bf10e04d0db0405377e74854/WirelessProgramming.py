@@ -1,3 +1,4 @@
+#!/usr/bin/python
 #**********************************************************************************
 # This script will handle the transmission of a compiled sketch in the
 # form of an INTEL HEX flash image to an attached gateway/master Moteino node,
