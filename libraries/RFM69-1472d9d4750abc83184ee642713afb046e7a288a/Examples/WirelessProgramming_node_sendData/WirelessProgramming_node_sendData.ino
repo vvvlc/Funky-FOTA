@@ -45,7 +45,7 @@
 #include <WirelessHEX69.h> //get it here: https://github.com/LowPowerLab/WirelessProgramming/tree/master/WirelessHEX69
 
 #define NODEID      123       // node ID used for this unit
-#define GATEWAYID   254       //id of gateway
+#define GATEWAYID   253       //id of gateway
 #define NETWORKID   250
 //Match frequency to the hardware version of the radio on your Moteino (uncomment one):
 //#define FREQUENCY   RF69_433MHZ
