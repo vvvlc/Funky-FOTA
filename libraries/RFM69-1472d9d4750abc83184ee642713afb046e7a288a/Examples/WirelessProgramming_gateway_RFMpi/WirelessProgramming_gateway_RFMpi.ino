@@ -37,6 +37,8 @@
 #define RF69_EEPROM_ADDR ((uint8_t*) 0x80)
 
 
+
+
 static byte bandToFreq (byte band) {
   return band == 4 ? RF69_433MHZ : band == 8 ? RF69_868MHZ : band == 9 ? RF69_915MHZ : 0;
 }
@@ -61,8 +63,10 @@ byte promiscuous_mode   :
   1;   // 0 = disabled, 1 = enabled
 byte encryption   :  
   1;   // 0 = disabled, 1 = enabled  
+byte show_temperature   :  
+  1;   // 0 = disabled, 1 = enabled    
 byte spare_flags  :
-  2;
+  1;
   word frequency_offset;  // used by rf12_config, offset 4
   char encryption_key[16]; // encrypt key 
   //byte pad[RF12_EEPROM_SIZE-8];
@@ -70,7 +74,7 @@ byte spare_flags  :
 } 
 RF69Config;
 
-static RF69Config config = {10,250,RF69_868MHZ,0,0,0,0,0,0,0,1600,{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},0};
+static RF69Config config = {10,250,RF69_868MHZ,0,0,0,0,0,0,0,0,1600,{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0},0};
 
 
 const char helpText1[] PROGMEM =
@@ -91,6 +95,7 @@ const char helpText1[] PROGMEM =
 "  <nnn> y    - enable signal strength trace mode, default:0 (disabled)\n"
 "               sample interval <nnn> secs/100 (0.01s-2.5s) eg 10y=0.1s\n"
 "  <nn> j     - sends local temperatur to node j\n"
+"             - if j>256 it displays temperatur in 1min time frames\n"
 "  u          - upload firmware using FOTA/Wireless programming\n"
 "  m          - dumps registers\n"
 "  ... n      - set encryption key, consists of 16 numbers, \n"
@@ -194,6 +199,12 @@ static void configDump() {
         SerialX.print(" e");
         SerialX.print(config.encryption);          
     }
+
+    if (config.show_temperature) {
+        SerialX.print(" j");
+        SerialX.print(config.show_temperature);          
+    }
+
 
     SerialX.println();
 }
@@ -312,6 +323,7 @@ static void wirelessprogramming() {
     }
   }
 }
+
 static void handleInput (char c) {
   if ('0' <= c && c <= '9') {
     value = 10 * value + c - '0';
@@ -427,18 +439,24 @@ static void handleInput (char c) {
 
     case 'j': //send temperature
       {      
-        showString(PSTR("Sending temperatur: "));
-        byte temperatur = radio.readTemperature(-1);
-        showByte(temperatur);
-        showString(PSTR("C to node: "));
-        showByte(value);              
-
-        sendLen = 2;
-        dest = value;
-        stack[0] = temperatur;
-        stack[1] = testCounter++;
-        cmd = 'a';
-      }
+        if (value<256) {
+          showString(PSTR("Sending temperatur: "));
+          byte temperatur = radio.readTemperature(-1);
+          showByte(temperatur);
+          showString(PSTR("C to node: "));
+          showByte(value);              
+  
+          sendLen = 2;
+          dest = value;
+          stack[0] = temperatur;
+          stack[1] = testCounter++;
+          cmd = 'a';
+        } else {
+            config.show_temperature=(value == 256)?1:0;          
+            saveConfig();
+        }
+          
+        }
       break;
 
     case 'p': //set promiscuout mode
@@ -681,10 +699,55 @@ void setup() {
  
 }
 
+unsigned long lastMillis = -1;
+
 void loop() {
   if (SerialX.available())
     handleInput(SerialX.read());
   if (trace_mode == 0) {
+
+    if ((millis() - lastMillis>=1000) && config.show_temperature)  {
+        lastMillis=millis();
+        byte temperatur = radio.readTemperature(-1);
+
+        showString(PSTR("OK"));
+
+      if (config.hex_output)
+        printOneChar('X');
+      if (config.group == 0) {
+        showString(PSTR(" G"));
+        showByte(config.group);
+      }
+      printOneChar(' ');
+      showByte(config.nodeId);
+
+      if (!config.hex_output)
+          printOneChar(' ');
+      showByte(temperatur);
+
+  
+      // display RSSI value after packet data
+      showString(PSTR(" ("));
+      if (config.hex_output)
+        //TODO modified RSSI 16bit vs 8 bit
+        showByte(10);
+      else
+        SerialX.print(-10);
+      showString(PSTR(") "));
+
+      SerialX.println();
+  
+      if (config.hex_output > 1) { // also print a line as ascii
+        showString(PSTR("ASC "));
+        if (config.group == 0) {
+          showString(PSTR(" II "));
+        }
+        printOneChar('<');
+        printOneChar('@' + (config.nodeId & 0x1F));
+        displayASCII((const byte*) &temperatur, 1);
+      }       
+    }
+    
     if (radio.receiveDone()) {
       byte n = radio.DATALEN;
       //DBG("no CRC equivavlent");
