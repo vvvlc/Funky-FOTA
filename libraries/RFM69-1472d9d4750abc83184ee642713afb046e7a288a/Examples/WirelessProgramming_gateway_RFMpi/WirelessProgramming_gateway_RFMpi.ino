@@ -464,10 +464,18 @@ static void handleInput (char c) {
       if (top == 0 && value==0) {
         //disable encryption
         config.encryption = 0;
-      } else {
+      } else if (value == 1 && top==0 ) {
+        config.encryption = 1;
+      } else if (value ==2 && top==0) {        
+        config.encryption = 1;
+        memcpy(&config.encryption_key, "ABCDEFGHIJKLMNOP", sizeof(config.encryption_key));        
+      } else if (value ==3 && top==0) {        
+        config.encryption = 1;
+        memcpy(&config.encryption_key, "abcdefghijklmnop", sizeof(config.encryption_key));
+      } else {        
         config.encryption = 1;
         stack[top++]=value;
-        memset(&config.encryption_key, 0, sizeof(config.encryption_key));
+        memset(&config.encryption_key, 66, sizeof(config.encryption_key));
         memcpy(&config.encryption_key, stack, min(top,sizeof(config.encryption_key)));
       }
       SerialX.println(sizeof(config.encryption_key));
@@ -621,6 +629,18 @@ static void displayASCII (const byte* data, byte count) {
 
 void setup() {
   SerialX.begin(BAUD_RATE);
+
+#if defined(ARDUINO_AVR_LILYPAD_USB) && !defined(SER1)
+//wait for serial port
+  {
+    while(!SerialX) {
+      activityLed(1);
+      delay(100);
+      activityLed(0);
+      delay(100);
+    };
+  }
+#endif
 
   activityLed(1);
   delay(100); // shortened for now. Handy with JeeNode Micro V1 where ISP
